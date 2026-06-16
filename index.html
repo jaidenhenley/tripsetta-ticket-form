@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Backlog Ticket · Tripsetta</title>
+  <style>
+    :root { --bg:#0f1115; --card:#171a21; --border:#262b36; --text:#e7eaf0; --muted:#9aa3b2; --accent:#6c8cff; --accent2:#8a6cff; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding:24px; }
+    .card { width:100%; max-width:560px; background:var(--card); border:1px solid var(--border); border-radius:18px; padding:28px; margin-top:24px; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+    h1 { font-size:22px; margin:0 0 4px; }
+    p.sub { color:var(--muted); margin:0 0 20px; font-size:14px; }
+    label { display:block; font-size:13px; font-weight:600; margin:16px 0 6px; }
+    input, textarea, select { width:100%; background:#0f131a; color:var(--text); border:1px solid var(--border); border-radius:10px; padding:11px 12px; font-size:15px; font-family:inherit; }
+    textarea { min-height:140px; resize:vertical; }
+    input:focus, textarea:focus, select:focus { outline:none; border-color:var(--accent); }
+    .row { display:flex; gap:12px; flex-wrap:wrap; } .row > div { flex:1; min-width:150px; }
+    details { margin-top:10px; border:1px solid var(--border); border-radius:10px; padding:0 12px; }
+    summary { cursor:pointer; padding:11px 0; font-size:13px; font-weight:600; color:var(--muted); }
+    details[open] { padding-bottom:12px; }
+    button { margin-top:22px; width:100%; border:none; border-radius:12px; padding:13px; font-size:16px; font-weight:700; color:#fff; cursor:pointer; background:linear-gradient(90deg,var(--accent),var(--accent2)); }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .msg { margin-top:16px; padding:12px 14px; border-radius:10px; font-size:14px; display:none; }
+    .msg.ok { display:block; background:rgba(60,180,120,.15); border:1px solid rgba(60,180,120,.4); }
+    .msg.err { display:block; background:rgba(220,80,80,.15); border:1px solid rgba(220,80,80,.4); }
+    .msg a { color:var(--accent); }
+    .req { color:#ff7b7b; }
+    .tags { margin-top:8px; font-size:13px; color:var(--muted); }
+    .tags b { color:var(--text); }
+    .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>New backlog ticket</h1>
+    <p class="sub">Just describe it in plain words — Claude writes the title and tags it. Files straight into the Developer Items board.</p>
+
+    <form id="ticketForm">
+      <label for="description">Describe the bug or idea <span class="req">*</span></label>
+      <textarea id="description" name="description" required placeholder="e.g. The quote PDF button doesn't work on iOS when I tap it from a trip — nothing happens. Should open the PDF."></textarea>
+      <div class="hint">Write naturally. Claude turns this into a clean title + description and picks the Type / Platform / Workflow.</div>
+
+      <label for="submitter">Your name</label>
+      <input id="submitter" name="submitter" placeholder="(optional)" />
+
+      <details>
+        <summary>Advanced — override what Claude picks (optional)</summary>
+        <label for="title">Title</label>
+        <input id="title" name="title" placeholder="Leave blank — Claude writes it" />
+        <div class="row">
+          <div>
+            <label for="type">Type</label>
+            <select id="type" name="type">
+              <option value="">Auto — let Claude decide</option>
+              <option>🐛 Bug</option>
+              <option>💬 Feedback</option>
+              <option>✨ Enhancement</option>
+              <option>🔄 Workflow Update</option>
+            </select>
+          </div>
+          <div>
+            <label for="platform">Platform</label>
+            <select id="platform" name="platform">
+              <option value="">Auto — let Claude decide</option>
+              <option>iOS</option>
+              <option>Android</option>
+              <option>Web</option>
+              <option>Mobile Only (IOS + Android)</option>
+              <option>All</option>
+            </select>
+          </div>
+          <div>
+            <label for="workflow">Workflow</label>
+            <select id="workflow" name="workflow">
+              <option value="">Auto — let Claude decide</option>
+              <option>Travel Agent</option>
+              <option>Working w/ Agent</option>
+              <option>Independent Traveler</option>
+              <option>All</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <button type="submit" id="submitBtn">Create ticket</button>
+      <div class="msg" id="msg"></div>
+    </form>
+  </div>
+
+  <script>
+    // --- Config: fill these in -------------------------------------------
+    // Edge function URL (Supabase project: lct-way-dev).
+    const FUNCTION_URL = "https://dohjzhyohfmevyofbutc.supabase.co/functions/v1/create-ticket";
+    // Must match the FORM_SHARED_SECRET secret set on the create-ticket function.
+    const FORM_SECRET = "d611f23f9e5ad44060ff4121cdbe1d58894afd2624e11faf";
+    // Optional: only needed if the function is deployed WITH JWT verification
+    // (i.e. NOT with --no-verify-jwt). Anon/publishable keys are safe to embed.
+    const SUPABASE_ANON_KEY = "";
+    // ---------------------------------------------------------------------
+
+    const form = document.getElementById('ticketForm');
+    const btn = document.getElementById('submitBtn');
+    const msg = document.getElementById('msg');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.className = 'msg';
+      btn.disabled = true;
+      btn.textContent = 'Structuring & filing…';
+
+      const payload = {
+        description: form.description.value.trim(),
+        title: form.title.value.trim(),
+        type: form.type.value,
+        platform: form.platform.value,
+        workflow: form.workflow.value,
+        submitter: form.submitter.value.trim(),
+      };
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (FORM_SECRET) headers['x-form-secret'] = FORM_SECRET;
+      if (SUPABASE_ANON_KEY) headers['Authorization'] = 'Bearer ' + SUPABASE_ANON_KEY;
+
+      try {
+        const res = await fetch(FUNCTION_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || ('HTTP ' + res.status));
+        msg.className = 'msg ok';
+        const t = data.ticket || {};
+        msg.innerHTML =
+          'Ticket created ✅ &nbsp; <a href="' + data.url + '" target="_blank" rel="noopener">Open in Notion →</a>' +
+          '<div class="tags"><b>' + (t.title || '') + '</b><br>' +
+          [t.type, t.platform, t.workflow].filter(Boolean).join(' · ') +
+          (data.ai_used ? '' : ' (filed without AI — Claude was unavailable)') + '</div>';
+        form.reset();
+      } catch (err) {
+        msg.className = 'msg err';
+        msg.textContent = 'Could not create ticket: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create ticket';
+      }
+    });
+  </script>
+</body>
+</html>
